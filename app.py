@@ -4,6 +4,7 @@
 # ==============================================================================
 import os
 import io
+import json
 import joblib
 import numpy as np
 import pandas as pd
@@ -106,7 +107,7 @@ GRINDING_DEFINITIONS = {
     "Ultra High (< 10 µm): ash ball-milled (particle size < 10 micrometers)": 4
 }
 
-# 3. Model & Data Artifact Ingestion Pipeline (Cached)
+# 3. Model & Data Artifact Ingestion Pipeline (Cached with Base_Score Interceptor)
 @st.cache_resource(show_spinner=False)
 def load_computational_artifacts():
     base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -116,7 +117,27 @@ def load_computational_artifacts():
         model_path = "/content/drive/MyDrive/MSc_Concrete_Strength/xgb_final_784.joblib"
     
     model = joblib.load(model_path)
-    explainer = shap.TreeExplainer(model)
+    
+    # Intercept and clean bracketed base_score '[3.032346E1]' for SHAP compatibility
+    orig_json_loads = json.loads
+    def patched_json_loads(s, *args, **kwargs):
+        obj = orig_json_loads(s, *args, **kwargs)
+        if isinstance(obj, dict) and "learner" in obj:
+            lp = obj["learner"].get("learner_model_param", {})
+            if "base_score" in lp and isinstance(lp["base_score"], str):
+                cleaned = lp["base_score"].strip("[]")
+                try:
+                    float(cleaned)
+                    lp["base_score"] = cleaned
+                except ValueError:
+                    pass
+        return obj
+
+    try:
+        json.loads = patched_json_loads
+        explainer = shap.TreeExplainer(model)
+    finally:
+        json.loads = orig_json_loads
     
     pareto_data = {}
     for scm in ["RHA", "POFA", "SCBA"]:
@@ -259,7 +280,6 @@ tab_forward, tab_generative, tab_matrix = st.tabs([
 with tab_forward:
     st.markdown("### Structural Capacity Estimation & Mechanistic Attribution")
 
-    # Callbacks for Two-Way Synchronized Binder Inputs
     if "cement_val" not in st.session_state:
         st.session_state.cement_val = 300.0
     if "scm_mass_val" not in st.session_state:
@@ -294,7 +314,6 @@ with tab_forward:
             on_change=update_from_cement
         )
         
-        # Dual Synchronized Inputs: Mass and % Replacement
         c_m1, c_m2 = st.columns(2)
         with c_m1:
             st.number_input(
@@ -391,7 +410,6 @@ with tab_forward:
         </div>
         """, unsafe_allow_html=True)
         
-        # Displaying with explicit units and scaled CSS font to prevent '...' clipping
         s1, s2, s3 = st.columns(3)
         s1.metric("Mean f_cm", f"{pred_fcm:.1f} MPa")
         s2.metric("Char. f_ck,cyl", f"{f_ck_cyl:.1f} MPa")
