@@ -282,6 +282,25 @@ def map_eurocode_capacity(f_cm: float):
             
     return f_ck_cyl, f_ck_cube, designation
 
+def same_class_cem1_gwp(ec2_class: str):
+    """GWP of the lowest-carbon CEM I mix on the Pareto front that reaches the same class.
+    Returns None below C20/25, where the leanest CEM I mix is already over-strength,
+    so no like-for-like saving exists."""
+    try:
+        ref = df_decision_matrix[(df_decision_matrix["SCM_Type"] == "CEM I") &
+                                 (df_decision_matrix["Target_Class"] == ec2_class)]
+        if ec2_class in ("C20/25", "C25/30") and not ref.empty:
+            return float(ref["GWP_kgCO2e_m3"].iloc[0])
+    except Exception:
+        pass
+    return None
+
+def saving_text(gwp: float, ec2_class: str) -> str:
+    ref = same_class_cem1_gwp(ec2_class)
+    if ref is None:
+        return "n/a (no like-for-like CEM I mix below C20/25)"
+    return f"{(ref - gwp) / ref * 100:.1f}% vs CEM I {ec2_class} ({ref:.1f})"
+
 # 5. Application UI & Tabs
 st.markdown('<div class="main-title">Sustainable Concrete Engine</div>', unsafe_allow_html=True)
 st.markdown(
@@ -444,7 +463,7 @@ with tab_forward:
         st.markdown("#### 4. Environmental Accounting (EN 15804)")
         e1, e2, e3 = st.columns(3)
         e1.metric("Embodied Carbon", f"{audit_res['GWP']:.1f} kg CO₂e/m³")
-        e2.metric("Carbon Abated", f"{audit_res['Abatement_Pct']:.1f}%")
+        e2.metric("Carbon Abated (same class)", saving_text(audit_res["GWP"], ec2_class).split(" vs ")[0])
         e3.metric("Eco-Efficiency (Ci)", f"{eco_index_ci:.2f}")
 
         st.markdown("#### 5. BS EN 206 Durability Conformance")
@@ -491,7 +510,7 @@ with tab_generative:
                 candidates = df_pareto[0.80 * df_pareto["Predicted_28d_Strength"] >= (custom_fck + 8.0)]
                 selected_solution = candidates.sort_values("GWP_kgCO2e_m3", ascending=True).iloc[0] if not candidates.empty else df_pareto.sort_values("Predicted_28d_Strength", ascending=False).iloc[0]
             else:
-                tier_pick = st.selectbox("Standardized Decision Tier:", ["Tier 1: High-Strength", "Tier 2: Balanced Eco-Structural", "Tier 3: High-Volume Eco"])
+                tier_pick = st.selectbox("Standardized Decision Tier:", ["Tier 1: High-Strength", "Tier 2: Balanced Eco-Structural", "Non-structural: plain concrete only"])
                 tier_sub = df_decision_matrix[(df_decision_matrix["SCM_Type"] == sel_scm) & (df_decision_matrix["Design_Tier"].str.contains(tier_pick.split(":")[0]))]
                 selected_solution = tier_sub.iloc[0] if not tier_sub.empty else df_pareto.iloc[len(df_pareto)//2]
 
@@ -525,9 +544,9 @@ with tab_generative:
 
             st.markdown("#### 3. Sustainability & Code Conformance Card")
             card1, card2, card3 = st.columns(3)
-            card1.info(f"Structural Capacity:\n\n• Mean f_cm: {pred_s:.2f} MPa\n• Char. f_ck,cyl: {fck_c:.2f} MPa\n• Char. f_ck,cube: {fck_cube_val:.2f} MPa")
-            card2.info(f"Embodied Carbon:\n\n• Mix GWP: {gwp_val:.1f} kg CO2e/m³\n• Savings: {(((346.93-gwp_val)/346.93)*100):.1f}% vs OPC")
-            card3.info(f"Eco-Efficiency:\n\n• Mix Ci: {ci_val:.2f} kg CO2e/(m³·MPa)\n• Clinker Floor: ≥ 180 kg/m³ (Met)")
+            card1.info(f"Structural Capacity:\n\n• Predicted cube f_cu: {pred_s:.2f} MPa\n• Mean f_cm,cyl (0.80 f_cu): {0.80*pred_s:.2f} MPa\n• Char. f_ck,cyl (f_cm − 8): {fck_c:.2f} MPa")
+            card2.info(f"Embodied Carbon:\n\n• Mix GWP: {gwp_val:.1f} kg CO2e/m³\n• Saving: {saving_text(gwp_val, code_c)}" + ("\n\n⚠ Plain / non-structural concrete only" if code_c in ("C12/15", "C16/20") else ""))
+            card3.info(f"Eco-Efficiency:\n\n• Mix Ci: {ci_val:.2f} kg CO2e/(m³·MPa)\n• Clinker floor (author-imposed): ≥ 180 kg/m³, met")
 
             st.markdown("#### 4. Location Along the Continuous NSGA-II Pareto Frontier")
             if not df_pareto.empty:
@@ -535,7 +554,7 @@ with tab_generative:
                 df_sorted = df_pareto.sort_values("SCM_Replacement_Pct").reset_index(drop=True)
                 ci_smooth = df_sorted["Eco_Efficiency_Ci"].rolling(window=5, min_periods=1, center=True).median()
                 ax_par.plot(df_sorted["SCM_Replacement_Pct"], ci_smooth, color="#0055b3", lw=2.2, label=f"Pareto Frontier ({sel_scm})")
-                ax_par.axhline(OPC_REF["Ci"], color="#d90429", linestyle=":", lw=1.2, label=f"OPC Baseline ({OPC_REF['Ci']:.2f})")
+                ax_par.axhline(OPC_REF["Ci"], color="#d90429", linestyle=":", lw=1.2, label=f"CEM I C25/30 reference ({OPC_REF['Ci']:.2f})")
                 ax_par.scatter([rep_r], [ci_val], color="#d90429", s=130, marker="*", zorder=5, label="Selected Formulation")
                 ax_par.set_xlabel("Agro-Waste Replacement Percentage, %SCM (%)", fontweight="bold", fontsize=9)
                 ax_par.set_ylabel("Binder Eco-Efficiency (Ci)", fontweight="bold", fontsize=9)
@@ -546,9 +565,10 @@ with tab_generative:
 
 # --- TAB 3: DECISION MATRIX ---
 with tab_matrix:
-    st.markdown("### Standardized Generative Decision Matrix (Table 8.1)")
+    st.markdown("### Standardised Generative Decision Matrix")
     if not df_decision_matrix.empty:
         df_display = df_decision_matrix.copy()
+        df_display = df_display[~((df_display["SCM_Type"] == "CEM I") & (df_display["Target_Class"] == "C16/20"))]
         if "f_ck_cyl_MPa" not in df_display.columns:
             df_display["f_ck_cyl_MPa"] = df_display["Strength_MPa"].apply(lambda x: max(0.0, x - 8.0))
             df_display["EC2_Class"] = df_display["Strength_MPa"].apply(lambda x: map_eurocode_capacity(x)[2])
