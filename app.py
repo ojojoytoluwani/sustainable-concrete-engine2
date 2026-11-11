@@ -78,26 +78,52 @@ st.markdown("""
 
 # 2. Environmental Inventory Factors & Engineering Constants
 EMISSION_FACTORS = {
-    "Cement": 0.8300,
-    "RHA": 0.0500,
-    "POFA": 0.0350,
-    "SCBA": 0.0350,
+    "Cement": 0.912,
+    "RHA": 0.05,
+    "POFA": 0.035,
+    "SCBA": 0.035,
     "Water": 0.0002,
-    "Fine_Agg": 0.0050,
-    "Coarse_Agg": 0.0080,
-    "SP": 1.2500
+    "Fine_Agg": 0.0051,
+    "Coarse_Agg": 0.0075,
+    "SP": 1.25
 }
 
 OPC_REF = {
-    "Cement": 400.0, "Fine_Agg": 720.0, "Coarse_Agg": 1100.0,
-    "Water": 160.0, "SP": 2.0, "fc": 40.0,
-    "GWP": 346.93, "Ci": 8.67
+    "Cement": 376.2,
+    "Fine_Agg": 698.8,
+    "Coarse_Agg": 1031.6,
+    "Water": 138.4,
+    "SP": 5.18,
+    "fc": 41.35,
+    "GWP": 360.91,
+    "Ci": 10.91
 }
 
 DEFAULT_OXIDES = {
-    "RHA": {"SiO2": 90.90, "Al2O3": 0.80, "Fe2O3": 0.40, "CaO": 0.90, "K2O": 2.20, "LOI": 3.80},
-    "POFA": {"SiO2": 58.20, "Al2O3": 5.40, "Fe2O3": 6.80, "CaO": 5.10, "K2O": 6.20, "LOI": 10.30},
-    "SCBA": {"SiO2": 72.40, "Al2O3": 6.80, "Fe2O3": 5.20, "CaO": 4.10, "K2O": 3.40, "LOI": 5.10}
+    "RHA": {
+        "SiO2": 90.9,
+        "Al2O3": 0.39,
+        "Fe2O3": 0.44,
+        "CaO": 0.8,
+        "K2O": 1.4,
+        "LOI": 4.61
+    },
+    "POFA": {
+        "SiO2": 57.71,
+        "Al2O3": 4.56,
+        "Fe2O3": 3.3,
+        "CaO": 6.55,
+        "K2O": 8.27,
+        "LOI": 10.3
+    },
+    "SCBA": {
+        "SiO2": 65.0,
+        "Al2O3": 4.82,
+        "Fe2O3": 4.01,
+        "CaO": 4.04,
+        "K2O": 4.07,
+        "LOI": 4.56
+    }
 }
 
 GRINDING_DEFINITIONS = {
@@ -239,7 +265,7 @@ def evaluate_structural_compliance(cement, scm, water, fine, coarse, sp, scm_typ
     }
 
 def map_eurocode_capacity(f_cm: float):
-    f_ck_cyl = max(0.0, f_cm - 8.0)
+    f_ck_cyl = max(0.0, 0.80 * f_cm - 8.0)  # model predicts 150 mm cube strength
     f_ck_cube = f_ck_cyl / 0.80
     
     classes = [
@@ -398,7 +424,7 @@ with tab_forward:
     audit_res = evaluate_structural_compliance(cement_val, scm_val, water_val, fine_val, coarse_val, sp_val, scm_type)
     pred_fcm = float(model.predict(df_input)[0])
     f_ck_cyl, f_ck_cube, ec2_class = map_eurocode_capacity(pred_fcm)
-    eco_index_ci = audit_res["GWP"] / pred_fcm if pred_fcm > 0 else 999.0
+    eco_index_ci = audit_res["GWP"] / (0.80 * pred_fcm) if pred_fcm > 0 else 999.0
 
     with col_pred:
         st.markdown("#### 3. Eurocode 2 Designations")
@@ -411,7 +437,7 @@ with tab_forward:
         """, unsafe_allow_html=True)
         
         s1, s2, s3 = st.columns(3)
-        s1.metric("Mean f_cm", f"{pred_fcm:.1f} MPa")
+        s1.metric("Predicted cube $f_{cu}$", f"{pred_fcm:.1f} MPa")
         s2.metric("Char. f_ck,cyl", f"{f_ck_cyl:.1f} MPa")
         s3.metric("Char. f_ck,cube", f"{f_ck_cube:.1f} MPa")
 
@@ -456,13 +482,13 @@ with tab_generative:
             selected_solution = None
         else:
             if target_mode == "Eurocode 2 Strength Class":
-                target_ec = st.selectbox("Required Eurocode Class:", ["C20/25", "C25/30", "C30/37", "C32/40"], index=2)
+                target_ec = st.selectbox("Required Eurocode Class:", ["C16/20", "C20/25", "C25/30"], index=1)
                 f_ck_req = float(target_ec.split("/")[0].replace("C", ""))
-                candidates = df_pareto[df_pareto["Predicted_28d_Strength"] >= (f_ck_req + 8.0)]
+                candidates = df_pareto[0.80 * df_pareto["Predicted_28d_Strength"] >= (f_ck_req + 8.0)]
                 selected_solution = candidates.sort_values("GWP_kgCO2e_m3", ascending=True).iloc[0] if not candidates.empty else df_pareto.sort_values("Predicted_28d_Strength", ascending=False).iloc[0]
             elif target_mode == "Custom Characteristic Capacity (f_ck)":
-                custom_fck = st.slider("Target Characteristic Cylinder Strength (MPa):", 20.0, 36.0, 28.0, 0.5)
-                candidates = df_pareto[df_pareto["Predicted_28d_Strength"] >= (custom_fck + 8.0)]
+                custom_fck = st.slider("Target Characteristic Cylinder Strength (MPa):", 12.0, 28.0, 20.0, 0.5)
+                candidates = df_pareto[0.80 * df_pareto["Predicted_28d_Strength"] >= (custom_fck + 8.0)]
                 selected_solution = candidates.sort_values("GWP_kgCO2e_m3", ascending=True).iloc[0] if not candidates.empty else df_pareto.sort_values("Predicted_28d_Strength", ascending=False).iloc[0]
             else:
                 tier_pick = st.selectbox("Standardized Decision Tier:", ["Tier 1: High-Strength", "Tier 2: Balanced Eco-Structural", "Tier 3: High-Volume Eco"])
@@ -509,7 +535,7 @@ with tab_generative:
                 df_sorted = df_pareto.sort_values("SCM_Replacement_Pct").reset_index(drop=True)
                 ci_smooth = df_sorted["Eco_Efficiency_Ci"].rolling(window=5, min_periods=1, center=True).median()
                 ax_par.plot(df_sorted["SCM_Replacement_Pct"], ci_smooth, color="#0055b3", lw=2.2, label=f"Pareto Frontier ({sel_scm})")
-                ax_par.axhline(OPC_REF["Ci"], color="#d90429", linestyle=":", lw=1.2, label="OPC Baseline (8.67)")
+                ax_par.axhline(OPC_REF["Ci"], color="#d90429", linestyle=":", lw=1.2, label=f"OPC Baseline ({OPC_REF['Ci']:.2f})")
                 ax_par.scatter([rep_r], [ci_val], color="#d90429", s=130, marker="*", zorder=5, label="Selected Formulation")
                 ax_par.set_xlabel("Agro-Waste Replacement Percentage, %SCM (%)", fontweight="bold", fontsize=9)
                 ax_par.set_ylabel("Binder Eco-Efficiency (Ci)", fontweight="bold", fontsize=9)
