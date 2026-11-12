@@ -89,39 +89,39 @@ EMISSION_FACTORS = {
 }
 
 OPC_REF = {
-    "Cement": 428.6,
-    "Fine_Agg": 740.3,
-    "Coarse_Agg": 1108.2,
-    "Water": 160.8,
-    "SP": 5.18,
-    "fc": 41.29,
-    "GWP": 409.51,
-    "Ci": 12.40
+    "Cement": 300.0,
+    "Fine_Agg": 865.2,
+    "Coarse_Agg": 950.0,
+    "Water": 135.0,
+    "SP": 0.00,
+    "fc": 35.97,
+    "GWP": 285.17,
+    "Ci": 9.91
 }
 
 DEFAULT_OXIDES = {
     "RHA": {
-        "SiO2": 90.9,
+        "SiO2": 92.26,
         "Al2O3": 0.39,
-        "Fe2O3": 0.44,
-        "CaO": 0.8,
-        "K2O": 1.4,
-        "LOI": 4.61
+        "Fe2O3": 0.32,
+        "CaO": 0.80,
+        "K2O": 1.40,
+        "LOI": 0.51
     },
     "POFA": {
         "SiO2": 57.71,
         "Al2O3": 4.56,
-        "Fe2O3": 3.3,
+        "Fe2O3": 3.30,
         "CaO": 6.55,
         "K2O": 8.27,
-        "LOI": 10.3
+        "LOI": 10.30
     },
     "SCBA": {
-        "SiO2": 65.0,
+        "SiO2": 65.00,
         "Al2O3": 4.82,
         "Fe2O3": 4.01,
         "CaO": 4.04,
-        "K2O": 4.07,
+        "K2O": 4.00,
         "LOI": 4.56
     }
 }
@@ -188,7 +188,7 @@ except Exception as e:
     artifacts_ready = False
     load_error_msg = str(e)
 
-# Range of each batch mass in the 784-record database, by material (kg/m³)
+# Range of each batch mass in the 778-record database, by material (kg/m³)
 DATA_RANGES = {
     "RHA":  {"Cement": (198.8, 428.4), "Ash": (17.4, 142.8), "Water": (153.0, 228.0), "Fine aggregate": (464.0, 900.0), "Coarse aggregate": (927.0, 1394.1), "Superplasticiser": (0.0, 11.8)},
     "POFA": {"Cement": (60.0, 433.0), "Ash": (5.3, 266.0), "Water": (103.5, 285.0), "Fine aggregate": (200.0, 805.0), "Coarse aggregate": (400.0, 1371.4), "Superplasticiser": (0.0, 16.5)},
@@ -306,8 +306,8 @@ def same_class_cem1_gwp(ec2_class: str):
 
 def saving_text(gwp: float, ec2_class: str) -> str:
     if ec2_class == "C25/30":
-        return ("indeterminate: within ±1 MPa of the C25/30 threshold the saving ranges "
-                "from about 2% to 20% (the mix lies at the model's predictive ceiling)")
+        return ("n/a: no CEM I mix on the front reaches C25/30, so there is no like-for-like reference "
+                "(the mix lies near the model's predictive ceiling)")
     ref = same_class_cem1_gwp(ec2_class)
     if ref is None:
         return "n/a (no like-for-like CEM I mix below C20/25)"
@@ -315,7 +315,7 @@ def saving_text(gwp: float, ec2_class: str) -> str:
 
 def saving_short(gwp: float, ec2_class: str) -> str:
     t = saving_text(gwp, ec2_class)
-    return t.split(" vs ")[0] if t[0].isdigit() or t[0] == "-" else ("indeterminate" if ec2_class == "C25/30" else "n/a")
+    return t.split(" vs ")[0] if t[0].isdigit() or t[0] == "-" else "n/a"
 
 # 5. Application UI & Tabs
 st.markdown('<div class="main-title">Sustainable Concrete Engine</div>', unsafe_allow_html=True)
@@ -331,7 +331,7 @@ if not artifacts_ready:
     st.error(f"Initialization Failed: Could not load core artifacts. Error: {load_error_msg}")
     st.stop()
 
-st.info("Screening tool. Predictions carry a typical error of about 5.5 MPa (150 mm cube basis) on studies not seen in training, and proposed mixes are candidates for trial batching, not specifications. Strength classes are assigned from point predictions.")
+st.info("Screening tool. Predictions carry a typical error of about 5.7 MPa (150 mm cube basis) on studies not seen in training, and proposed mixes are candidates for trial batching, not specifications. Strength classes are assigned from point predictions.")
 tab_forward, tab_generative, tab_matrix = st.tabs([
     "🔬 Forward Prediction & SHAP Audit",
     "⚡ Inverse Generative Designer (NSGA-II)",
@@ -574,7 +574,7 @@ with tab_generative:
                 df_sorted = df_pareto.sort_values("SCM_Replacement_Pct").reset_index(drop=True)
                 ci_smooth = df_sorted["Eco_Efficiency_Ci"].rolling(window=5, min_periods=1, center=True).median()
                 ax_par.plot(df_sorted["SCM_Replacement_Pct"], ci_smooth, color="#0055b3", lw=2.2, label=f"Pareto Frontier ({sel_scm})")
-                ax_par.axhline(OPC_REF["Ci"], color="#d90429", linestyle=":", lw=1.2, label=f"CEM I C25/30 reference ({OPC_REF['Ci']:.2f})")
+                ax_par.axhline(OPC_REF["Ci"], color="#d90429", linestyle=":", lw=1.2, label=f"CEM I C20/25 reference ({OPC_REF['Ci']:.2f})")
                 ax_par.scatter([rep_r], [ci_val], color="#d90429", s=130, marker="*", zorder=5, label="Selected Formulation")
                 ax_par.set_xlabel("Agro-Waste Replacement Percentage, %SCM (%)", fontweight="bold", fontsize=9)
                 ax_par.set_ylabel("Binder Eco-Efficiency (Ci)", fontweight="bold", fontsize=9)
@@ -595,7 +595,7 @@ with tab_matrix:
 
         col_order = ["SCM_Type", "Design_Tier", "Actual_%SCM", "Strength_MPa", "f_ck_cyl_MPa", "EC2_Class", "Cement_kg", "SCM_kg", "Water_kg", "w_b_ratio", "GWP_kgCO2e_m3", "Eco_Efficiency_Ci", "CO2_Abatement_Pct"]
         st.dataframe(df_display[col_order], width="stretch")
-        st.caption("Savings are against the lowest-carbon CEM I mix of the same class. C16/20 has no like-for-like CEM I reference. C25/30 savings are not reported: within ±1 MPa of the class threshold they range from about 2% to 20%, because every front flattens near the model's predictive ceiling (about 41–44 MPa cube).")
+        st.caption("Savings are against the lowest-carbon CEM I mix of the same class. C16/20 has no like-for-like CEM I reference. C25/30 savings are not reported: no CEM I mix on the front reaches C25/30, so there is no like-for-like reference, and every front flattens near the model's predictive ceiling.")
         
         csv_buffer = io.StringIO()
         df_display[col_order].to_csv(csv_buffer, index=False)
