@@ -504,6 +504,19 @@ with tab_forward:
     st.pyplot(fig_shap)
     plt.close(fig_shap)
 
+
+def pick_lowest_gwp(candidates, df_pareto, fck_target, ash):
+    """Lowest-GWP front mix meeting the target; if none does, say so and show the strongest mix."""
+    if not candidates.empty:
+        return candidates.sort_values("GWP_kgCO2e_m3", ascending=True).iloc[0]
+    best = df_pareto.sort_values("Predicted_28d_Strength", ascending=False).iloc[0]
+    st.warning(
+        f"No {ash} mix on the Pareto front reaches f_ck = {fck_target:.1f} MPa. The strongest mix on the front "
+        f"(predicted f_ck = {0.80 * best['Predicted_28d_Strength'] - 8.0:.1f} MPa) is shown instead; it does NOT meet "
+        "the target. The fronts were computed for a 35 MPa base concrete at 28 days, which limits the attainable strength."
+    )
+    return best
+ 
 # --- TAB 2: INVERSE GENERATIVE DESIGNER ---
 with tab_generative:
     st.markdown("### Inverse Generative Concrete Mix Prescription")
@@ -524,11 +537,11 @@ with tab_generative:
                 target_ec = st.selectbox("Required Eurocode Class:", ["C16/20", "C20/25", "C25/30"], index=1)
                 f_ck_req = float(target_ec.split("/")[0].replace("C", ""))
                 candidates = df_pareto[0.80 * df_pareto["Predicted_28d_Strength"] >= (f_ck_req + 8.0)]
-                selected_solution = candidates.sort_values("GWP_kgCO2e_m3", ascending=True).iloc[0] if not candidates.empty else df_pareto.sort_values("Predicted_28d_Strength", ascending=False).iloc[0]
+                selected_solution = pick_lowest_gwp(candidates, df_pareto, f_ck_req if target_mode == "Eurocode 2 Strength Class" else custom_fck, sel_scm)
             elif target_mode == "Custom Characteristic Capacity (f_ck)":
                 custom_fck = st.slider("Target Characteristic Cylinder Strength (MPa):", 12.0, 28.0, 20.0, 0.5)
                 candidates = df_pareto[0.80 * df_pareto["Predicted_28d_Strength"] >= (custom_fck + 8.0)]
-                selected_solution = candidates.sort_values("GWP_kgCO2e_m3", ascending=True).iloc[0] if not candidates.empty else df_pareto.sort_values("Predicted_28d_Strength", ascending=False).iloc[0]
+                selected_solution = pick_lowest_gwp(candidates, df_pareto, f_ck_req if target_mode == "Eurocode 2 Strength Class" else custom_fck, sel_scm)
             else:
                 tier_pick = st.selectbox("Standardized Decision Tier:", ["Tier 1: High-Strength", "Tier 2: Balanced Eco-Structural", "Non-structural: plain concrete only"])
                 tier_sub = df_decision_matrix[(df_decision_matrix["SCM_Type"] == sel_scm) & (df_decision_matrix["Design_Tier"].str.contains(tier_pick.split(":")[0]))]
