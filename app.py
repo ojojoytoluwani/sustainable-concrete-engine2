@@ -89,14 +89,14 @@ EMISSION_FACTORS = {
 }
 
 OPC_REF = {
-    "Cement": 376.2,
-    "Fine_Agg": 698.8,
-    "Coarse_Agg": 1031.6,
-    "Water": 138.4,
+    "Cement": 428.6,
+    "Fine_Agg": 740.3,
+    "Coarse_Agg": 1108.2,
+    "Water": 160.8,
     "SP": 5.18,
-    "fc": 41.35,
-    "GWP": 360.91,
-    "Ci": 10.91
+    "fc": 41.29,
+    "GWP": 409.51,
+    "Ci": 12.40
 }
 
 DEFAULT_OXIDES = {
@@ -296,10 +296,17 @@ def same_class_cem1_gwp(ec2_class: str):
     return None
 
 def saving_text(gwp: float, ec2_class: str) -> str:
+    if ec2_class == "C25/30":
+        return ("indeterminate: within ±1 MPa of the C25/30 threshold the saving ranges "
+                "from about 2% to 20% (the mix lies at the model's predictive ceiling)")
     ref = same_class_cem1_gwp(ec2_class)
     if ref is None:
         return "n/a (no like-for-like CEM I mix below C20/25)"
     return f"{(ref - gwp) / ref * 100:.1f}% vs CEM I {ec2_class} ({ref:.1f})"
+
+def saving_short(gwp: float, ec2_class: str) -> str:
+    t = saving_text(gwp, ec2_class)
+    return t.split(" vs ")[0] if t[0].isdigit() or t[0] == "-" else ("indeterminate" if ec2_class == "C25/30" else "n/a")
 
 # 5. Application UI & Tabs
 st.markdown('<div class="main-title">Sustainable Concrete Engine</div>', unsafe_allow_html=True)
@@ -463,7 +470,7 @@ with tab_forward:
         st.markdown("#### 4. Environmental Accounting (EN 15804)")
         e1, e2, e3 = st.columns(3)
         e1.metric("Embodied Carbon", f"{audit_res['GWP']:.1f} kg CO₂e/m³")
-        e2.metric("Carbon Abated (same class)", saving_text(audit_res["GWP"], ec2_class).split(" vs ")[0])
+        e2.metric("Carbon Abated (same class)", saving_short(audit_res["GWP"], ec2_class))
         e3.metric("Eco-Efficiency (Ci)", f"{eco_index_ci:.2f}")
 
         st.markdown("#### 5. BS EN 206 Durability Conformance")
@@ -574,7 +581,8 @@ with tab_matrix:
             df_display["EC2_Class"] = df_display["Strength_MPa"].apply(lambda x: map_eurocode_capacity(x)[2])
 
         col_order = ["SCM_Type", "Design_Tier", "Actual_%SCM", "Strength_MPa", "f_ck_cyl_MPa", "EC2_Class", "Cement_kg", "SCM_kg", "Water_kg", "w_b_ratio", "GWP_kgCO2e_m3", "Eco_Efficiency_Ci", "CO2_Abatement_Pct"]
-        st.dataframe(df_display[col_order], use_container_width=True)
+        st.dataframe(df_display[col_order], width="stretch")
+        st.caption("Savings are against the lowest-carbon CEM I mix of the same class. C16/20 has no like-for-like CEM I reference. C25/30 savings are not reported: within ±1 MPa of the class threshold they range from about 2% to 20%, because every front flattens near the model's predictive ceiling (about 41–44 MPa cube).")
         
         csv_buffer = io.StringIO()
         df_display[col_order].to_csv(csv_buffer, index=False)
