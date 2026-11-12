@@ -90,13 +90,13 @@ EMISSION_FACTORS = {
 
 OPC_REF = {
     "Cement": 300.0,
-    "Fine_Agg": 865.2,
-    "Coarse_Agg": 950.0,
-    "Water": 135.0,
+    "Fine_Agg": 840.4,
+    "Coarse_Agg": 965.8,
+    "Water": 143.9,
     "SP": 0.00,
-    "fc": 35.97,
+    "fc": 37.11,
     "GWP": 285.17,
-    "Ci": 9.91
+    "Ci": 9.60
 }
 
 DEFAULT_OXIDES = {
@@ -118,10 +118,10 @@ DEFAULT_OXIDES = {
     },
     "SCBA": {
         "SiO2": 65.00,
-        "Al2O3": 4.82,
+        "Al2O3": 4.65,
         "Fe2O3": 4.01,
         "CaO": 4.04,
-        "K2O": 4.00,
+        "K2O": 4.07,
         "LOI": 4.56
     }
 }
@@ -188,11 +188,11 @@ except Exception as e:
     artifacts_ready = False
     load_error_msg = str(e)
 
-# Range of each batch mass in the 778-record database, by material (kg/m³)
+# Range of each batch mass in the 768-record database, by material (kg/m³)
 DATA_RANGES = {
     "RHA":  {"Cement": (198.8, 428.4), "Ash": (17.4, 142.8), "Water": (153.0, 228.0), "Fine aggregate": (464.0, 900.0), "Coarse aggregate": (927.0, 1394.1), "Superplasticiser": (0.0, 11.8)},
     "POFA": {"Cement": (60.0, 433.0), "Ash": (5.3, 266.0), "Water": (103.5, 285.0), "Fine aggregate": (200.0, 805.0), "Coarse aggregate": (400.0, 1371.4), "Superplasticiser": (0.0, 16.5)},
-    "SCBA": {"Cement": (183.0, 377.9), "Ash": (15.4, 183.0), "Water": (150.0, 210.1), "Fine aggregate": (546.0, 1010.0), "Coarse aggregate": (932.0, 1320.0), "Superplasticiser": (0.8, 5.6)},
+    "SCBA": {"Cement": (183.0, 377.9), "Ash": (15.4, 183.0), "Water": (159.1, 210.1), "Fine aggregate": (546.0, 1010.0), "Coarse aggregate": (932.0, 1320.0), "Superplasticiser": (0.8, 5.6)},
     "None": {"Cement": (100.0, 500.0), "Water": (103.5, 250.0), "Fine aggregate": (200.0, 1010.0), "Coarse aggregate": (400.0, 1394.1), "Superplasticiser": (0.0, 16.5)},
 }
 
@@ -331,7 +331,7 @@ if not artifacts_ready:
     st.error(f"Initialization Failed: Could not load core artifacts. Error: {load_error_msg}")
     st.stop()
 
-st.info("Screening tool. Predictions carry a typical error of about 5.7 MPa (150 mm cube basis) on studies not seen in training, and proposed mixes are candidates for trial batching, not specifications. Strength classes are assigned from point predictions.")
+st.info("Screening tool. Predictions carry a typical error of about 5.8 MPa (150 mm cube basis) on studies not seen in training, and proposed mixes are candidates for trial batching, not specifications. Strength classes are assigned from point predictions.")
 tab_forward, tab_generative, tab_matrix = st.tabs([
     "🔬 Forward Prediction & SHAP Audit",
     "⚡ Inverse Generative Designer (NSGA-II)",
