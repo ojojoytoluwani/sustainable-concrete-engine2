@@ -340,7 +340,7 @@ tab_forward, tab_generative, tab_matrix = st.tabs([
 
 # --- TAB 1: FORWARD PREDICTION ---
 with tab_forward:
-    st.markdown("### Structural Capacity Estimation & Mechanistic Attribution")
+    st.markdown("### Strength prediction and model attribution")
 
     if "cement_val" not in st.session_state:
         st.session_state.cement_val = 300.0
@@ -425,7 +425,10 @@ with tab_forward:
         cao_val = st.number_input("CaO Content:", value=ox_defaults["CaO"], step=0.2)
         k2o_val = st.number_input("K₂O Content:", value=ox_defaults["K2O"], step=0.2)
         loi_val = st.number_input("Loss on Ignition (LOI):", value=ox_defaults["LOI"], step=0.5)
-        other_ox_val = max(0.0, 100.0 - (sio2_val + al2o3_val + fe2o3_val + cao_val + k2o_val + loi_val))
+        other_ox_val = st.number_input(
+            "Other oxides:", value={"RHA": 1.21, "POFA": 9.09, "SCBA": 4.75}[scm_type], step=0.5,
+            help="Pre-filled with the database median used in the optimisation (Table 3.7). "
+                 "Median profiles do not sum to 100%, so this is not computed as a balance.")
 
     input_dict = {
         "Cement_Content": cement_val,
@@ -436,7 +439,7 @@ with tab_forward:
         "Superplasticizer_Mass": sp_val,
         "Curing_Age": age_val,
         "Control_Strength_28d": control_str_val,
-        "Grinding_Intensity_enc": grind_val,
+        "Grinding_Intensity_enc": grind_val if scm_val > 0 else 0,
         "SCM_SiO2": sio2_val if scm_val > 0 else 0.0,
         "SCM_Al2O3": al2o3_val if scm_val > 0 else 0.0,
         "SCM_Fe2O3": fe2o3_val if scm_val > 0 else 0.0,
@@ -494,7 +497,7 @@ with tab_forward:
             for w in audit_res["warnings"]: st.warning(w)
 
     st.markdown("---")
-    st.markdown("### Mechanistic Attribution: TreeSHAP Decomposition")
+    st.markdown("### Model attribution: TreeSHAP decomposition (describes the model, not chemical mechanisms)")
     shap_exp = explainer(df_input)
     shap.plots.waterfall(shap_exp[0], max_display=10, show=False)
     fig_shap = plt.gcf()
@@ -599,4 +602,4 @@ with tab_matrix:
         st.download_button("📥 Export Decision Matrix as CSV", data=csv_buffer.getvalue(), file_name="concrete_decision_matrix.csv", mime="text/csv")
 
 st.markdown("---")
-st.markdown("<div style='text-align: center; color: #6c757d; font-size: 0.82rem;'>Sustainable Concrete Engine | Master of Science in Civil Engineering | BS EN 1992-1-1 & EN 15804 Compliance</div>", unsafe_allow_html=True)
+st.markdown("<div style='text-align: center; color: #6c757d; font-size: 0.82rem;'>Sustainable Concrete Engine | Master of Science in Civil Engineering | Class mapping after BS EN 1992-1-1; carbon accounting after EN 15804 (A1–A3). Screening tool, not a design check.</div>", unsafe_allow_html=True)
