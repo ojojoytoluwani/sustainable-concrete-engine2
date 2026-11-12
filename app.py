@@ -188,6 +188,14 @@ except Exception as e:
     artifacts_ready = False
     load_error_msg = str(e)
 
+# Range of each batch mass in the 784-record database, by material (kg/m³)
+DATA_RANGES = {
+    "RHA":  {"Cement": (198.8, 428.4), "Ash": (17.4, 142.8), "Water": (153.0, 228.0), "Fine aggregate": (464.0, 900.0), "Coarse aggregate": (927.0, 1394.1), "Superplasticiser": (0.0, 11.8)},
+    "POFA": {"Cement": (60.0, 433.0), "Ash": (5.3, 266.0), "Water": (103.5, 285.0), "Fine aggregate": (200.0, 805.0), "Coarse aggregate": (400.0, 1371.4), "Superplasticiser": (0.0, 16.5)},
+    "SCBA": {"Cement": (183.0, 377.9), "Ash": (15.4, 183.0), "Water": (150.0, 210.1), "Fine aggregate": (546.0, 1010.0), "Coarse aggregate": (932.0, 1320.0), "Superplasticiser": (0.8, 5.6)},
+    "None": {"Cement": (100.0, 500.0), "Water": (103.5, 250.0), "Fine aggregate": (200.0, 1010.0), "Coarse aggregate": (400.0, 1394.1), "Superplasticiser": (0.0, 16.5)},
+}
+
 # 4. Eurocode 2 & BS 8500 Auditing Functions
 def evaluate_structural_compliance(cement, scm, water, fine, coarse, sp, scm_type):
     total_binder = cement + scm
@@ -197,32 +205,39 @@ def evaluate_structural_compliance(cement, scm, water, fine, coarse, sp, scm_typ
     
     violations = []
     warnings = []
-    
+
+    # Limits are those of the optimisation (Chapter 3, Section 3.9.3), not code requirements.
     if cement < 180.0:
         violations.append(
-            f"Clinker Starvation: Portland cement ({cement:.1f} kg/m³) is below the 180 kg/m³ "
-            "clinker clamping boundary. Critical risk of rebar depassivation under BS 8500."
+            f"Cement ({cement:.1f} kg/m³) is below the 180 kg/m³ clinker floor adopted in this study "
+            "to retain a portlandite reserve for reinforcement. This is an author-imposed limit, "
+            "not a requirement of BS EN 206 or BS 8500, and it does not apply to plain concrete."
         )
-        
-    if total_binder < 260.0:
-        violations.append(
-            f"Binder Deficit: Total binder ({total_binder:.1f} kg/m³) is below the BS EN 206 "
-            "minimum structural durability floor (260 kg/m³)."
-        )
-    elif total_binder > 550.0:
+    if total_binder < 300.0 or total_binder > 480.0:
         warnings.append(
-            f"Thermal Cracking Risk: Total binder ({total_binder:.1f} kg/m³) exceeds 550 kg/m³ limit."
+            f"Binder content ({total_binder:.1f} kg/m³) is outside the 300–480 kg/m³ range used in the optimisation."
         )
-        
-    if wb_ratio < 0.28:
-        warnings.append(f"Low w/b Ratio ({wb_ratio:.3f}): Risk of incomplete hydration and compaction.")
-    elif wb_ratio > 0.60:
-        violations.append(f"Excess Porosity: w/b ({wb_ratio:.3f}) exceeds structural maximum limit (0.60).")
-        
-    if fresh_density < 2200.0 or fresh_density > 2550.0:
+    if wb_ratio < 0.32 or wb_ratio > 0.48:
         warnings.append(
-            f"Fresh Density ({fresh_density:.1f} kg/m³) deviates from standard normal-weight concrete (2200–2550 kg/m³)."
+            f"Water–binder ratio ({wb_ratio:.3f}) is outside the 0.32–0.48 range used in the optimisation."
         )
+    if fresh_density < 2250.0 or fresh_density > 2450.0:
+        warnings.append(
+            f"Fresh density ({fresh_density:.1f} kg/m³) is outside the 2250–2450 kg/m³ range used in the optimisation."
+        )
+    if scm > 0 and (rep_pct < 5.0 or rep_pct > 50.0):
+        warnings.append(f"Ash fraction ({rep_pct:.1f}%) is outside the 5–50% range used in the optimisation.")
+
+    # Range of the training data for this material (prediction is unreliable outside it)
+    lo_hi = DATA_RANGES.get(scm_type if scm > 0 else "None", {})
+    vals = {"Cement": cement, "Ash": scm, "Water": water, "Fine aggregate": fine,
+            "Coarse aggregate": coarse, "Superplasticiser": sp}
+    for k, v in vals.items():
+        if k in lo_hi and not (lo_hi[k][0] <= v <= lo_hi[k][1]):
+            warnings.append(
+                f"{k} ({v:.1f} kg/m³) lies outside the range of the training data for this material "
+                f"({lo_hi[k][0]:.0f}–{lo_hi[k][1]:.0f} kg/m³). The prediction is an extrapolation and is unreliable."
+            )
 
     exposures = []
     if wb_ratio <= 0.65 and total_binder >= 260: exposures.append("XC1 (Dry Interior)")
@@ -230,14 +245,8 @@ def evaluate_structural_compliance(cement, scm, water, fine, coarse, sp, scm_typ
     if wb_ratio <= 0.55 and total_binder >= 300: exposures.append("XC3/XC4 (External Facades)")
     if wb_ratio <= 0.45 and total_binder >= 340: exposures.append("XD1/XS1 (Chlorides / Seawater Spray)")
 
-    if rep_pct <= 5.0:
-        cement_type = "CEM I (Ordinary Portland Cement)"
-    elif rep_pct <= 20.0:
-        cement_type = f"CEM II/A-P ({scm_type} Pozzolanic 6–20%)"
-    elif rep_pct <= 35.0:
-        cement_type = f"CEM II/B-P ({scm_type} Pozzolanic 21–35%)"
-    else:
-        cement_type = f"CEM IV/B ({scm_type} High-Volume Pozzolanic 36–50%)"
+    cement_type = ("Plain CEM I" if rep_pct <= 0.0 else
+                   f"Binary blend: CEM I + {rep_pct:.1f}% {scm_type} (not an EN 197-1 cement type)")
 
     scm_ef = EMISSION_FACTORS.get(scm_type, 0.0400)
     gwp = (
@@ -322,6 +331,7 @@ if not artifacts_ready:
     st.error(f"Initialization Failed: Could not load core artifacts. Error: {load_error_msg}")
     st.stop()
 
+st.info("Screening tool. Predictions carry a typical error of about 5.5 MPa (150 mm cube basis) on studies not seen in training, and proposed mixes are candidates for trial batching, not specifications. Strength classes are assigned from point predictions.")
 tab_forward, tab_generative, tab_matrix = st.tabs([
     "🔬 Forward Prediction & SHAP Audit",
     "⚡ Inverse Generative Designer (NSGA-II)",
@@ -385,9 +395,9 @@ with tab_forward:
         cement_val = st.session_state.cement_val
         scm_val = st.session_state.scm_mass_val
 
-        water_val = st.number_input("Batching Water:", min_value=100.0, max_value=260.0, value=160.0, step=5.0)
-        fine_val = st.number_input("Natural River Sand:", min_value=500.0, max_value=1000.0, value=750.0, step=10.0)
-        coarse_val = st.number_input("Crushed Granite (Coarse):", min_value=800.0, max_value=1350.0, value=1050.0, step=10.0)
+        water_val = st.number_input("Water:", min_value=100.0, max_value=290.0, value=160.0, step=5.0)
+        fine_val = st.number_input("Fine aggregate:", min_value=200.0, max_value=1050.0, value=750.0, step=10.0)
+        coarse_val = st.number_input("Coarse aggregate:", min_value=400.0, max_value=1400.0, value=1050.0, step=10.0)
         sp_val = st.number_input("Superplasticizer (SP):", min_value=0.0, max_value=15.0, value=2.5, step=0.5)
 
     with col_chem:
@@ -395,8 +405,8 @@ with tab_forward:
         age_val = st.slider("Curing Age (Days):", min_value=3, max_value=90, value=28, step=1)
         control_str_val = st.number_input(
             "Reference Lab 28d Control Strength (MPa):", 
-            min_value=20.0, max_value=70.0, value=40.0, step=1.0,
-            help="28-day compressive strength of 100% Portland cement control mix from the testing facility."
+            min_value=15.0, max_value=50.0, value=35.0, step=0.5,
+            help="28-day 150 mm cube strength of a plain CEM I control cast with the same materials. The training data span 16.8–48.0 MPa."
         )
         
         selected_grind_label = st.selectbox(
@@ -427,13 +437,13 @@ with tab_forward:
         "Curing_Age": age_val,
         "Control_Strength_28d": control_str_val,
         "Grinding_Intensity_enc": grind_val,
-        "SCM_SiO2": sio2_val,
-        "SCM_Al2O3": al2o3_val,
-        "SCM_Fe2O3": fe2o3_val,
-        "SCM_CaO": cao_val,
-        "SCM_K2O": k2o_val,
-        "SCM_LOI": loi_val,
-        "SCM_Other_Oxides": other_ox_val,
+        "SCM_SiO2": sio2_val if scm_val > 0 else 0.0,
+        "SCM_Al2O3": al2o3_val if scm_val > 0 else 0.0,
+        "SCM_Fe2O3": fe2o3_val if scm_val > 0 else 0.0,
+        "SCM_CaO": cao_val if scm_val > 0 else 0.0,
+        "SCM_K2O": k2o_val if scm_val > 0 else 0.0,
+        "SCM_LOI": loi_val if scm_val > 0 else 0.0,
+        "SCM_Other_Oxides": other_ox_val if scm_val > 0 else 0.0,
         "SCM_Type_None": 1 if scm_val == 0 else 0,
         "SCM_Type_POFA": 1 if (scm_type == "POFA" and scm_val > 0) else 0,
         "SCM_Type_RHA": 1 if (scm_type == "RHA" and scm_val > 0) else 0,
@@ -458,7 +468,7 @@ with tab_forward:
         <div class="metric-card">
             <span style="font-size:0.9rem; color:#666;">EUROCODE 2 DESIGNATION</span><br>
             <span style="font-size:1.8rem; font-weight:700; color:#0055b3;">{ec2_class}</span><br>
-            <span style="font-size:0.85rem; color:#333;">Permissible in: {', '.join(audit_res['exposures'][:2]) if audit_res['exposures'] else 'Non-Structural'}</span>
+            <span style="font-size:0.85rem; color:#333;">Composition limits met (indicative, BS EN 206 Annex F; strength class not checked): {', '.join(audit_res['exposures'][:2]) if audit_res['exposures'] else 'none'}</span>
         </div>
         """, unsafe_allow_html=True)
         
@@ -473,12 +483,12 @@ with tab_forward:
         e2.metric("Carbon Abated (same class)", saving_short(audit_res["GWP"], ec2_class))
         e3.metric("Eco-Efficiency (Ci)", f"{eco_index_ci:.2f}")
 
-        st.markdown("#### 5. BS EN 206 Durability Conformance")
+        st.markdown("#### 5. Composition checks (study limits)")
         if audit_res["is_compliant"]:
-            st.markdown(f'<div class="audit-pass">✓ PASSED: Compliant with BS EN 206. ({audit_res["cement_type"]})</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="audit-pass">✓ Meets the author-imposed clinker floor. ({audit_res["cement_type"]})</div>', unsafe_allow_html=True)
         else:
             fail_text = "<br>• ".join(audit_res["violations"])
-            st.markdown(f'<div class="audit-fail">✗ VIOLATION:<br>• {fail_text}</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="audit-fail">✗ Outside the study limits:<br>• {fail_text}</div>', unsafe_allow_html=True)
 
         if audit_res["warnings"]:
             for w in audit_res["warnings"]: st.warning(w)
